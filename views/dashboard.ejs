@@ -1,0 +1,72 @@
+<%- include('partials/header', { title: 'Home - Twicket', user: user }) %>
+<main>
+    <h1>Twicket</h1>
+    <form action="/posts" method="post">
+        <textarea name="content" rows="4" cols="50" placeholder="Add a Tweek..." required></textarea>
+        <button type="submit">Post</button>
+    </form>
+    <h2>Tweeks</h2>
+    <% posts.forEach(post => { %>
+        <% if (post.author) { %>
+            <div class="post">
+                <div class="post-header">
+                    <a href="/user/<%= post.author._id %>">
+                        <img src="<%= post.author.profilePicture %>" alt="<%= post.author.username %>'s Profile Picture" class="profile-picture">
+                    </a>
+                    <div class="user-info">
+                        <span class="username"><%= post.author.username %></span>
+                        <span class="timestamp"><%= new Date(post.createdAt).toLocaleString() %></span>
+                    </div>
+                </div>
+                <div class="post-content">
+                    <p><%= post.content %></p>
+                </div>
+                <div class="post-actions">
+                    <% if (user) { %>
+                        <!-- Like/Unlike Button -->
+                        <% if (post.likes.includes(user._id)) { %>
+                            <form action="/posts/like/<%= post._id %>" method="post" style="display:inline;">
+                                <button type="submit" class="action-button liked">
+                                    <i class="fas fa-heart"></i> <%= post.likeCount %>
+                                </button>
+                            </form>
+                        <% } else { %>
+                            <form action="/posts/like/<%= post._id %>" method="post" style="display:inline;">
+                                <button type="submit" class="action-button">
+                                    <i class="far fa-heart"></i> <%= post.likeCount %>
+                                </button>
+                            </form>
+                        <% } %>
+                        
+                        <!-- Delete Button (only for post author) -->
+                        <% if (post.author._id.toString() === user._id.toString()) { %>
+                            <form action="/posts/delete/<%= post._id %>" method="post" style="display:inline;">
+                                <button type="submit" class="action-button delete">
+                                    <i class="fas fa-trash"></i> Delete
+                                </button>
+                            </form>
+                        <% } %>
+                        
+                        <!-- Follow/Unfollow Button -->
+                        <% if (user._id.toString() !== post.author._id.toString()) { %>
+                            <% if (user.following.includes(post.author._id)) { %>
+                                <form action="/unfollow/<%= post.author._id %>" method="post" style="display:inline;">
+                                    <button type="submit" class="action-button following">
+                                        <i class="fas fa-user-minus"></i>
+                                    </button>
+                                </form>
+                            <% } else { %>
+                                <form action="/follow/<%= post.author._id %>" method="post" style="display:inline;">
+                                    <button type="submit" class="action-button">
+                                        <i class="fas fa-user-plus"></i>
+                                    </button>
+                                </form>
+                            <% } %>
+                        <% } %>
+                    <% } %>
+                </div>
+            </div>
+        <% } %>
+    <% }) %>
+</main>
+<%- include('partials/footer') %>

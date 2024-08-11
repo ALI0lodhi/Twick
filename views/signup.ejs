@@ -1,0 +1,11 @@
+<%- include('partials/header', { title: 'Sign Up - Twicket', user: null }) %>
+    <h1>Sign Up</h1>
+    <form action="/signup" method="post">
+        <label for="username">Username:</label>
+        <input type="text" id="username" name="username" required>
+        <label for="password">Password:</label>
+        <input type="password" id="password" name="password" required>
+        <button type="submit">Sign Up</button>
+    </form>
+    <p>Already have an account? </p><a href="/login">Login</a>
+<%- include('partials/footer') %>

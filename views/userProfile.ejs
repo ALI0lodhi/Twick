@@ -1,0 +1,49 @@
+<%- include('partials/header', { title: user.username + " - Twicket", user: currentUser }) %>
+<main>
+    <div class="user-profile">
+        <div class="profile-header">
+            <img src="<%= user.profilePicture %>" alt="<%= user.username %>'s Profile Picture" class="profile-picture">
+            <h1><%= user.username %></h1>
+            <p><strong>Followers:</strong> <%= followersCount %></p>
+            <p><strong>Following:</strong> <%= followingCount %></p>
+            <p><strong>Badge:</strong> 
+                <span class="badge <%= user.badge.toLowerCase() %>"><%= user.badge %></span>
+            </p>
+
+            <% if (currentUser) { %>
+                <% if (currentUser._id.toString() !== user._id.toString()) { %>
+                    <% if (currentUser.following.includes(user._id)) { %>
+                        <form action="/unfollow/<%= user._id %>" method="post" style="display:inline;">
+                            <button type="submit" class="action-button following">
+                                <i class="fas fa-user-minus"></i> Unfollow
+                            </button>
+                        </form>
+                    <% } else { %>
+                        <form action="/follow/<%= user._id %>" method="post" style="display:inline;">
+                            <button type="submit" class="action-button">
+                                <i class="fas fa-user-plus"></i> Follow
+                            </button>
+                        </form>
+                    <% } %>
+                <% } %>
+            <% } %>
+        </div>
+        <div class="user-posts">
+            <h2>Posts</h2>
+            <% posts.forEach(post => { %>
+                <div class="post">
+                    <p><%= post.content %></p>
+                    <p><strong>Likes:</strong> <%= post.likeCount %></p>
+                    <% if (currentUser && currentUser._id.toString() === post.author.toString()) { %>
+                        <form action="/posts/delete/<%= post._id %>" method="post" style="display:inline;">
+                            <button type="submit" class="action-button delete">
+                                <i class="fas fa-trash"></i> Delete
+                            </button>
+                        </form>
+                    <% } %>
+                </div>
+            <% }) %>
+        </div>
+    </div>
+</main>
+<%- include('partials/footer') %>

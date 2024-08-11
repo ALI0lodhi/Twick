@@ -1,0 +1,28 @@
+<%- include('partials/header', { title: 'Profile - Twicket', user: user }) %>
+    <main>
+        <h1>Your Profile</h1>
+        <img src="<%= user.profilePicture %>" alt="Profile Picture" class="profile-picture">
+        <form action="/update-profile" method="post" enctype="multipart/form-data">
+            <label for="username">Change Username:</label>
+            <input type="text" id="username" name="username" value="<%= user.username %>" required>
+            <label for="profilePicture">Change Profile Picture:</label>
+            <input type="file" id="profilePicture" name="profilePicture" accept="image/*">
+            <button type="submit">Update Profile</button>
+        </form>
+        <h2>Your Posts</h2>
+        <% posts.forEach(post => { %>
+            <div class="post">
+                <div class="post-header">
+                    <img src="<%= user.profilePicture %>" alt="<%= user.username %>" class="profile-picture">
+                    <div class="user-info">
+                        <span class="username"><%= user.username %></span>
+                        <span class="timestamp"><%= new Date(post.createdAt).toLocaleString() %></span>
+                    </div>
+                </div>
+                <div class="post-content">
+                    <p><%= post.content %></p>
+                </div>
+            </div>
+        <% }) %>
+    </main>
+    <%- include('partials/footer') %>
