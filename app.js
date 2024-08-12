@@ -1,24 +1,34 @@
 const express = require('express');
+const serverless = require('serverless-http');
 const session = require('express-session');
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const multer = require('multer');
 const path = require('path');
-const bcrypt = require('bcryptjs');
+const favicon = require('serve-favicon');
+
 const User = require('./models/User');
 const Post = require('./models/Post');
-const favicon = require('serve-favicon');
-const config = require('./models/config'); // Ensure config file exists and is correct
-
+const config = require('./models/config');
 // Create Express app
 const app = express();
-const port = 3000;
 
+// Middleware
 app.use(favicon(path.join(__dirname, './public', 'favicon.ico')));
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, './public')));
 
+// Use a session store compatible with serverless, or replace with JWT
+const DynamoDBStore = require('connect-dynamodb')({ session: session });
 app.use(session({
+    store: new DynamoDBStore({
+        table: 'sessions-table',
+        AWSConfigJSON: {
+            accessKeyId: 'your-access-key-id',
+            secretAccessKey: 'your-secret-access-key',
+            region: 'your-region'
+        }
+    }),
     secret: 'alilodhi',
     resave: false,
     saveUninitialized: true,
@@ -28,22 +38,16 @@ app.use(session({
 // Set EJS as the view engine
 app.set('view engine', 'ejs');
 
-mongoose.connect('mongodb://localhost:27017/social_media', {
+// MongoDB Connection
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/social_media', {
     useNewUrlParser: true,
-    useUnifiedTopology: true
+    useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 5000
 }).then(() => console.log('Connected to MongoDB'))
   .catch(err => console.error('Failed to connect to MongoDB', err));
 
 // Configure multer for file uploads
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, 'public/uploads/'); // Directory to save uploaded files
-    },
-    filename: (req, file, cb) => {
-        cb(null, Date.now() + path.extname(file.originalname)); // Append date to file name
-    }
-});
-
+const storage = multer.memoryStorage(); // Use memory storage for serverless
 const upload = multer({
     storage: storage,
     limits: { fileSize: 1000000 }, // Limit file size to 1MB
@@ -59,21 +63,6 @@ const upload = multer({
     }
 });
 
-// Badge assignment logic
-const assignBadge = (user) => {
-    if (config.specialUserIds.includes(user._id.toString()) || user.customBadge) {
-        return user.badge; // Use the custom badge if set or if the user is in the special list
-    }
-
-    const followersCount = user.followers.length;
-    if (followersCount >= 5) {
-        return 'Bronze';
-    } else if (followersCount >= 2) {
-        return 'Mascot';
-    }
-    return 'No Badge'; // Default badge
-};
-
 // Middleware to set req.user
 app.use(async (req, res, next) => {
     if (req.session.userId) {
@@ -86,14 +75,11 @@ app.use(async (req, res, next) => {
     next();
 });
 
-// Route Handlers
-
-// Display login page
+// Routes
 app.get('/login', (req, res) => {
     res.render('login', { title: 'Login', user: req.user });
 });
 
-// Handle login form submission
 app.post('/login', async (req, res) => {
     const { username, password } = req.body;
     try {
@@ -110,12 +96,10 @@ app.post('/login', async (req, res) => {
     }
 });
 
-// Display sign-up page
 app.get('/signup', (req, res) => {
     res.render('signup', { title: 'Sign Up', user: req.user });
 });
 
-// Handle sign-up form submission
 app.post('/signup', async (req, res) => {
     const { username, password } = req.body;
     try {
@@ -129,7 +113,6 @@ app.post('/signup', async (req, res) => {
     }
 });
 
-// Display dashboard
 app.get('/dashboard', async (req, res) => {
     if (!req.session.userId) {
         return res.redirect('/login');
@@ -152,7 +135,6 @@ app.get('/dashboard', async (req, res) => {
     }
 });
 
-// Handle new post submission
 app.post('/posts', async (req, res) => {
     if (!req.session.userId) {
         return res.redirect('/login');
@@ -173,7 +155,6 @@ app.post('/posts', async (req, res) => {
     }
 });
 
-// Handle deleting a post
 app.post('/posts/delete/:id', async (req, res) => {
     if (!req.session.userId) {
         return res.redirect('/login');
@@ -185,20 +166,18 @@ app.post('/posts/delete/:id', async (req, res) => {
             return res.status(404).send('Post not found');
         }
 
-        // Check if the post belongs to the logged-in user
         if (post.author.toString() !== req.session.userId) {
             return res.status(403).send('Unauthorized');
         }
 
-        await Post.deleteOne({ _id: req.params.id }); // Delete the post
-        res.redirect('/dashboard'); // Redirect to dashboard or another page
+        await Post.deleteOne({ _id: req.params.id });
+        res.redirect('/dashboard');
     } catch (err) {
         console.error('Error deleting post:', err);
         res.status(500).send('Internal Server Error');
     }
 });
 
-// Handle profile picture upload
 app.post('/upload-profile-picture', upload.single('profilePicture'), async (req, res) => {
     if (!req.session.userId) {
         return res.redirect('/login');
@@ -210,8 +189,10 @@ app.post('/upload-profile-picture', upload.single('profilePicture'), async (req,
             return res.redirect('/dashboard');
         }
 
-        // Update profile picture URL
-        user.profilePicture = `/uploads/${req.file.filename}`;
+        // Upload the image to S3 or another cloud storage and get the URL
+        const profilePictureUrl = await uploadToS3(req.file);
+
+        user.profilePicture = profilePictureUrl;
         await user.save();
 
         res.redirect('/profile');
@@ -221,7 +202,6 @@ app.post('/upload-profile-picture', upload.single('profilePicture'), async (req,
     }
 });
 
-// Route for user editing their own profile
 app.get('/profile', async (req, res) => {
     if (!req.session.userId) {
         return res.redirect('/login');
@@ -236,13 +216,12 @@ app.get('/profile', async (req, res) => {
     }
 });
 
-// User profile
 app.get('/user/:id', async (req, res) => {
     try {
         const userId = req.params.id;
         const user = await User.findById(userId)
-            .populate('followers', 'username _id') // Fetch followers for count
-            .populate('following', 'username _id'); // Fetch following for count
+            .populate('followers', 'username _id')
+            .populate('following', 'username _id');
 
         const posts = await Post.find({ author: userId })
             .populate('author', 'username profilePicture')
@@ -251,10 +230,10 @@ app.get('/user/:id', async (req, res) => {
         const followersCount = user.followers.length;
         const followingCount = user.following.length;
 
-        const badge = assignBadge(user); // Determine badge
+        const badge = assignBadge(user);
 
         res.render('userProfile', { 
-            user: { ...user.toObject(), badge }, // Include computed badge
+            user: { ...user.toObject(), badge }, 
             posts, 
             currentUser: req.user,
             followersCount,
@@ -266,7 +245,6 @@ app.get('/user/:id', async (req, res) => {
     }
 });
 
-// Handle updating profile
 app.post('/update-profile', upload.single('profilePicture'), async (req, res) => {
     if (!req.session.userId) {
         return res.redirect('/login');
@@ -279,7 +257,8 @@ app.post('/update-profile', upload.single('profilePicture'), async (req, res) =>
             user.username = username;
         }
         if (req.file) {
-            user.profilePicture = `/uploads/${req.file.filename}`;
+            const profilePictureUrl = await uploadToS3(req.file);
+            user.profilePicture = profilePictureUrl;
         }
         await user.save();
         res.redirect('/profile');
@@ -289,123 +268,78 @@ app.post('/update-profile', upload.single('profilePicture'), async (req, res) =>
     }
 });
 
-// Route to handle Follow
 app.post('/follow/:id', async (req, res) => {
     if (!req.session.userId) {
         return res.redirect('/login');
     }
 
     try {
-        const userToFollowId = req.params.id;
-        const currentUser = await User.findById(req.session.userId);
+        const userId = req.session.userId;
+        const targetUserId = req.params.id;
 
-        // Check if user is already following the userToFollow
-        if (currentUser.following.includes(userToFollowId)) {
-            return res.redirect('/profile'); // Or appropriate redirect
+        const user = await User.findById(userId);
+        const targetUser = await User.findById(targetUserId);
+
+        if (!user || !targetUser) {
+            return res.status(404).send('User not found');
         }
 
-        // Add the userToFollow to currentUser's following list
-        currentUser.following.push(userToFollowId);
-        await currentUser.save();
+        // Avoid following oneself
+        if (userId === targetUserId) {
+            return res.status(400).send('You cannot follow yourself');
+        }
 
-        // Add currentUser to userToFollow's followers list
-        const userToFollow = await User.findById(userToFollowId);
-        userToFollow.followers.push(req.session.userId);
+        if (user.following.includes(targetUserId)) {
+            return res.status(400).send('You are already following this user');
+        }
 
-        // Update badge after follow
-        userToFollow.badge = assignBadge(userToFollow); // Use the updated badge function
-        await userToFollow.save();
+        user.following.push(targetUserId);
+        targetUser.followers.push(userId);
 
-        res.redirect('/dashboard'); // Or redirect to user's profile page
+        await user.save();
+        await targetUser.save();
+
+        res.redirect(`/user/${targetUserId}`);
     } catch (err) {
-        console.error(err);
+        console.error('Error following user:', err);
         res.status(500).send('Internal Server Error');
     }
 });
 
-// Handle unfollow
 app.post('/unfollow/:id', async (req, res) => {
     if (!req.session.userId) {
         return res.redirect('/login');
     }
 
     try {
-        const userToUnfollowId = req.params.id;
-        const currentUser = await User.findById(req.session.userId);
-
-        // Check if user is already following the userToUnfollow
-        if (!currentUser.following.includes(userToUnfollowId)) {
-            return res.redirect('/dashboard'); // Or appropriate redirect
-        }
-
-        // Remove the userToUnfollow from currentUser's following list
-        currentUser.following.pull(userToUnfollowId);
-        await currentUser.save();
-
-        // Remove currentUser from userToUnfollow's followers list
-        const userToUnfollow = await User.findById(userToUnfollowId);
-        userToUnfollow.followers.pull(req.session.userId);
-        
-        // Update badge after unfollow
-        userToUnfollow.badge = assignBadge(userToUnfollow); // Use the updated badge function
-        await userToUnfollow.save();
-
-        res.redirect('/dashboard'); // Or redirect to user's profile page
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('Internal Server Error');
-    }
-});
-
-// Like a post
-app.post('/posts/like/:id', async (req, res) => {
-    if (!req.session.userId) {
-        return res.redirect('/login');
-    }
-
-    try {
-        const post = await Post.findById(req.params.id);
-        if (!post) {
-            return res.status(404).send('Post not found');
-        }
-
         const userId = req.session.userId;
-        // Check if the user has already liked the post
-        const index = post.likes.indexOf(userId);
-        if (index === -1) {
-            // If not liked, add the user's ID to the likes array
-            post.likes.push(userId);
-        } else {
-            // If already liked, remove the user's ID from the likes array
-            post.likes.splice(index, 1);
+        const targetUserId = req.params.id;
+
+        const user = await User.findById(userId);
+        const targetUser = await User.findById(targetUserId);
+
+        if (!user || !targetUser) {
+            return res.status(404).send('User not found');
         }
 
-        await post.save();
-        res.redirect('back'); // Redirect back to the page the user was on
+        user.following = user.following.filter(id => id.toString() !== targetUserId);
+        targetUser.followers = targetUser.followers.filter(id => id.toString() !== userId);
+
+        await user.save();
+        await targetUser.save();
+
+        res.redirect(`/user/${targetUserId}`);
     } catch (err) {
-        console.error('Error handling like:', err);
+        console.error('Error unfollowing user:', err);
         res.status(500).send('Internal Server Error');
     }
 });
 
-// Handle logout
-app.get('/logout', (req, res) => {
-    req.session.destroy(err => {
-        if (err) {
-            console.error(err);
-            res.status(500).send('Internal Server Error');
-        } else {
-            res.redirect('/login');
-        }
-    });
-});
+// Helper function to upload file to S3
+async function uploadToS3(file) {
+    // Implement your S3 upload logic here
+    return 'https://your-s3-bucket-url/' + file.filename;
+}
 
-// 404 Not Found
-app.use((req, res) => {
-    res.status(404).render('404', { title: '404 Not Found', user: req.user });
-});
-
-// Start the server
-app.listen(port, () => {
-    console.log(`Server is running on http://localhost:${port}`);
-});
+// Export the Express app as a serverless function
+module.exports.handler = serverless(app);
