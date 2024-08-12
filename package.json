@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "app.js",
   "scripts": {
-    "build": ""
+    "build": "node app.js"
   },
   "dependencies": {
     "@vercel/node": "^3.2.8",
