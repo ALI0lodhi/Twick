@@ -1,8 +1,31 @@
-// routes/auth.js
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
 const Post = require('../models/Post');
+const bcrypt = require('bcrypt');
+const session = require('express-session');
+const MongoStore = require('connect-mongo');
+
+// Setup session with MongoDB session store
+router.use(session({
+    secret: process.env.SESSION_SECRET || 'hhfty63468',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: process.env.NODE_ENV === 'production' }, // Use secure cookies in production
+    store: MongoStore.create({
+        mongoUrl: process.env.MONGODB_URI, // MongoDB connection string
+        ttl: 14 * 24 * 60 * 60 // 14 days expiration
+    })
+}));
+
+// Middleware to check if the user is logged in
+const isAuthenticated = (req, res, next) => {
+    if (req.session.userId) {
+        next();
+    } else {
+        res.redirect('/login');
+    }
+};
 
 // Login route (GET)
 router.get('/login', (req, res) => {
@@ -19,7 +42,8 @@ router.post('/signup', async (req, res) => {
     const { username, password } = req.body;
 
     try {
-        const user = new User({ username, password });
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const user = new User({ username, password: hashedPassword });
         await user.save();
         req.session.userId = user._id;
         res.redirect('/dashboard');
@@ -34,7 +58,7 @@ router.post('/login', async (req, res) => {
 
     try {
         const user = await User.findOne({ username });
-        if (user && await user.comparePassword(password)) {
+        if (user && await bcrypt.compare(password, user.password)) {
             req.session.userId = user._id;
             res.redirect('/dashboard');
         } else {
@@ -47,17 +71,19 @@ router.post('/login', async (req, res) => {
 
 // Logout route
 router.get('/logout', (req, res) => {
-    req.session.destroy();
-    res.redirect('/login');
+    req.session.destroy(err => {
+        if (err) {
+            return res.status(500).send('Error logging out');
+        }
+        res.clearCookie('connect.sid');
+        res.redirect('/login');
+    });
 });
 
 // Post creation route
-router.post('/posts', async (req, res) => {
-    if (!req.session.userId) {
-        return res.redirect('/login');
-    }
-
+router.post('/posts', isAuthenticated, async (req, res) => {
     const { content } = req.body;
+
     try {
         const post = new Post({
             content,
@@ -71,11 +97,7 @@ router.post('/posts', async (req, res) => {
 });
 
 // Dashboard route with posts
-router.get('/dashboard', async (req, res) => {
-    if (!req.session.userId) {
-        return res.redirect('/login');
-    }
-
+router.get('/dashboard', isAuthenticated, async (req, res) => {
     try {
         const posts = await Post.find().populate('author', 'username').sort({ createdAt: -1 });
         res.render('dashboard', { posts });

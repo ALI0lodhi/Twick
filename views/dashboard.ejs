@@ -27,13 +27,13 @@
                         <% if (post.likes.includes(user._id)) { %>
                             <form action="/posts/like/<%= post._id %>" method="post" style="display:inline;">
                                 <button type="submit" class="action-button liked">
-                                    <i class="fas fa-heart"></i> <%= post.likeCount %>
+                                    <i class="fa-regular fa-heart"><%= post.likeCount %></i> 
                                 </button>
                             </form>
                         <% } else { %>
                             <form action="/posts/like/<%= post._id %>" method="post" style="display:inline;">
                                 <button type="submit" class="action-button">
-                                    <i class="far fa-heart"></i> <%= post.likeCount %>
+                                    <i class="fa-regular fa-heart"></i>  <%= post.likeCount %>
                                 </button>
                             </form>
                         <% } %>
