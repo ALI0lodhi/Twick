@@ -32,10 +32,18 @@ app.use(session({
 // Set EJS as the view engine
 app.set('view engine', 'ejs');
 
+app.use(cors(
+    {
+        origin: ['https://twick-nk5o4n9j5-alis-projects-b3e6ec04.vercel.app'],
+        methods: ["POST", "GET"],
+        credentials: true
+    }
+));
+
 // Connect to MongoDB
-mongoose.connect('mongodb://localhost:27017/social_media', {
+mongoose.connect('mongodb+srv://dev:alidev@cluster0.5vmqm.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0', {
     useNewUrlParser: true,
-    useUnifiedTopology: true
+    useUnifiedTopology: true,
 })
 .then(() => console.log('Connected to MongoDB'))
 .catch(err => console.error('Failed to connect to MongoDB', err));
